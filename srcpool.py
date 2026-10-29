@@ -49,10 +49,24 @@ STATE = {"err": "", "last_refresh": 0, "last_check": 0, "checking": False}
 ATTR_RE = re.compile(r'([a-zA-Z0-9-]+)="([^"]*)"')
 
 
-def fetch(url, timeout=25):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+def fetch(url, timeout=25, retries=4):
+    last = None
+    for i in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = r.read()
+            text = data.decode("utf-8", "replace")
+            if len(data) < 200:
+                raise ValueError("响应过短 %d 字节" % len(data))
+            return text
+        except Exception as e:
+            last = e
+            if i < retries - 1:
+                wait = 3 + i * 4
+                print("[warn] %s 第 %d 次失败(%r)，%ds 后重试" % (url, i + 1, e, wait))
+                time.sleep(wait)
+    raise last
 
 
 PLACEHOLDER_URL = ("cccimg.com", "placeholder-status", "example.com")
@@ -309,6 +323,7 @@ def main():
     ap.add_argument("--include-dead", action="store_true")
     ap.add_argument("--check-only", action="store_true", help="跑一轮就退出")
     ap.add_argument("--worker", action="store_true", help="worker 模式：跑一轮，写文件，退出（不起服务）")
+    ap.add_argument("--no-check", action="store_true", help="跳过健康检查，只合并去重（跨境环境推荐，快 10 倍）")
     ap.add_argument("--out", default=None, help="m3u 输出路径（--worker 时写文件）")
     ap.add_argument("--html", default=None, help="同时输出一个统计页 index.html")
     a = ap.parse_args()
@@ -322,7 +337,10 @@ def main():
 
     if a.check_only or a.worker:
         refresh()
-        check()
+        if a.no_check:
+            print("[ok] 跳过健康检查，合并模式")
+        else:
+            check()
         if a.worker:
             body = m3u()
             out = a.out or "sub.m3u"
@@ -331,10 +349,14 @@ def main():
             with open(out, "wb") as f:
                 f.write(body)
             alive = sum(1 for v in POOL.values() if v.get("alive") is True)
-            print("[ok] 写出 %s（%d 条，活 %d）" % (out, body.count(b"#EXTINF") - 1, alive))
+            total = len(POOL)
+            print("[ok] 写出 %s（%d 条，池 %d，活 %d）" % (out, body.count(b"#EXTINF") - 1, total, alive))
             if a.html:
                 write_html(a.html)
-            if alive == 0:
+            if a.no_check:
+                if total == 0:
+                    raise SystemExit("一个源都没抓到，本次不发布")
+            elif alive == 0:
                 raise SystemExit("没有存活源，本次不发布")
         return
 

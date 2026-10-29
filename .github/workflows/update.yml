@@ -22,6 +22,8 @@ jobs:
         https://dainoiptv.xyz/sub?1dIg88fh=m3u
         http://k.niu66.vip/9tgcid
       EXTEND_DAYS: "3650"
+      # 1 = 只合并去重（快，跨境推荐）；0 = 顺带做全量健康检查（慢 10 倍，存活判定受出口位置影响）
+      NO_CHECK: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,7 +35,8 @@ jobs:
 
       - name: Generate playlist
         run: |
-          python3 srcpool.py --worker \
+          if [ "$NO_CHECK" = "1" ]; then EXTRA="--no-check"; else EXTRA=""; fi
+          python3 srcpool.py --worker $EXTRA \
             --out publish/sub.m3u \
             --html publish/index.html \
             --extend-days "$EXTEND_DAYS" \
