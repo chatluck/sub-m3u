@@ -1,0 +1,6 @@
+publish/
+__pycache__/
+*.pyc
+srcpool.json
+srcpool.json.tmp
+*.log

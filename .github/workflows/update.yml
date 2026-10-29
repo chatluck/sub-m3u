@@ -1,0 +1,53 @@
+name: update-subscription
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-subscription
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # 每行一个订阅地址，改这里就行
+      SOURCES: |
+        https://dainoiptv.xyz/sub?1dIg88fh=m3u
+        http://k.niu66.vip/9tgcid
+      EXTEND_DAYS: "3650"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate playlist
+        run: |
+          python3 srcpool.py --worker \
+            --out publish/sub.m3u \
+            --html publish/index.html \
+            --extend-days "$EXTEND_DAYS" \
+            --check-workers 16
+          echo "----- 统计 -----"
+          grep -c '#EXTINF' publish/sub.m3u || true
+          ls -la publish/
+
+      - name: Publish to gh-pages
+        run: |
+          cd publish
+          git init -q -b gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "update $(date -u +%FT%TZ)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
